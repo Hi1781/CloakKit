@@ -21,13 +21,20 @@ final class SecureContainerView: UITextField {
         isSecureTextEntry = true
         borderStyle = .none
         backgroundColor = .clear
-        // 不透明深色安全字形占满（正常被内容层盖住不可见；截屏时被系统黑化）
-        textColor = UIColor(white: 0.06, alpha: 1)
+        // 半透明安全字形：alpha 极低（非 clear）→ 肉眼不可见、不遮挡内容，
+        // 但系统仍判定存在“可见安全文本”→ 截屏/录屏时黑化该区域为全屏黑。
+        textColor = UIColor(white: 0.06, alpha: 0.01)
         font = UIFont.systemFont(ofSize: 320)
         text = String(repeating: "●", count: 200)
         translatesAutoresizingMaskIntoConstraints = false
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    /// 字段自身不拦截触摸：命中自己则穿透到下层，命中内容子视图则正常交给内容
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        return hit === self ? nil : hit
+    }
 }
 
 /// 把任意根控制器（TabBar / 解锁页）的内容放进安全容器
@@ -45,19 +52,7 @@ final class SecureWrapperViewController: UIViewController {
         let bg = UIColor(white: 0.06, alpha: 1)
         view.backgroundColor = bg
 
-        // 底层：secure 安全层（isSecureTextEntry + 不透明深色安全字形占满）。
-        // 截屏/录屏时系统把该字段文本区域黑化 → 全屏黑。
-        let s = SecureContainerView()
-        s.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(s)
-        NSLayoutConstraint.activate([
-            s.topAnchor.constraint(equalTo: view.topAnchor),
-            s.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            s.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            s.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-        ])
-
-        // 上层：真实内容，不透明深色背景盖住 secure 字形 → 正常显示无 ● 露出。
+        // 下层：真实内容。
         addChild(content)
         content.view.translatesAutoresizingMaskIntoConstraints = false
         content.view.backgroundColor = bg
@@ -69,6 +64,18 @@ final class SecureWrapperViewController: UIViewController {
             content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
         content.didMove(toParent: self)
+
+        // 上层：secure 安全层（isSecureTextEntry + 半透明安全字形占满）。
+        // 正常肉眼不可见（alpha≈0.01）；截屏/录屏时系统黑化其文本区域 → 全屏黑。
+        let s = SecureContainerView()
+        s.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(s)
+        NSLayoutConstraint.activate([
+            s.topAnchor.constraint(equalTo: view.topAnchor),
+            s.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            s.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            s.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
     }
 
     override var shouldAutorotate: Bool { content.shouldAutorotate }
