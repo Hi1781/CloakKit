@@ -89,6 +89,22 @@ final class LockManager {
     func unlockModule(_ key: String) { unlockedModules.insert(key) }
     func lockModule(_ key: String) { unlockedModules.remove(key) }
 
+    // MARK: - 每模块独立密码（可选；未设置则回退主密码）
+    func hasModulePassword(_ key: String) -> Bool { defs.data(forKey: "mod_\(key)_salt") != nil }
+    func setModulePassword(_ key: String, _ pwd: String?) {
+        if let p = pwd, !p.isEmpty {
+            write(pwd: p, saltKey: "mod_\(key)_salt", hashKey: "mod_\(key)_hash")
+        } else {
+            defs.removeObject(forKey: "mod_\(key)_salt")
+            defs.removeObject(forKey: "mod_\(key)_hash")
+        }
+        unlockedModules.remove(key)
+    }
+    func verifyModulePassword(_ key: String, _ pwd: String) -> Bool {
+        guard hasModulePassword(key) else { return false }
+        return verify(pwd: pwd, saltKey: "mod_\(key)_salt", hashKey: "mod_\(key)_hash")
+    }
+
     // MARK: - 基础哈希工具
     private func write(pwd: String, saltKey: String, hashKey: String) {
         let salt = VaultCrypto.random(VaultCrypto.saltSize)

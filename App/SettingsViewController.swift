@@ -4,7 +4,7 @@ import UIKit
 final class SettingsViewController: UITableViewController {
 
     private enum Section: Int, CaseIterable {
-        case security, about
+        case security, modules, about
     }
     private let lm = LockManager.shared
 
@@ -24,10 +24,18 @@ final class SettingsViewController: UITableViewController {
     // MARK: - 数据源
     override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        Section(rawValue: section) == .security ? "应用安全" : "关于"
+        switch Section(rawValue: section) {
+        case .security: return "应用安全"
+        case .modules: return "各板块独立密码"
+        default: return "关于"
+        }
     }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        Section(rawValue: section) == .security ? 5 : 3
+        switch Section(rawValue: section) {
+        case .security: return 5
+        case .modules: return 3
+        default: return 3
+        }
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let c = tableView.dequeueReusableCell(withIdentifier: "cell")
@@ -63,11 +71,16 @@ final class SettingsViewController: UITableViewController {
                 sw.addTarget(self, action: #selector(lockToggle(_:)), for: .valueChanged)
                 c.accessoryView = sw
             }
+        } else if Section(rawValue: indexPath.section) == .modules {
+            let (name, key) = moduleInfo(indexPath.row)
+            c.textLabel?.text = name + "（独立密码）"
+            c.detailTextLabel?.text = lm.hasModulePassword(key) ? "已设置" : "使用主密码"
+            c.accessoryType = .disclosureIndicator
         } else {
             switch indexPath.row {
             case 0:
                 c.textLabel?.text = "版本"
-                let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.0"
+                let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.3.0"
                 c.detailTextLabel?.text = "v\(v)"
             case 1:
                 c.textLabel?.text = "免责声明"
@@ -78,6 +91,14 @@ final class SettingsViewController: UITableViewController {
             }
         }
         return c
+    }
+
+    private func moduleInfo(_ row: Int) -> (String, String) {
+        switch row {
+        case 0: return ("浏览器", "browser")
+        case 1: return ("传话", "chat")
+        default: return ("互传", "transfer")
+        }
     }
 
     @objc private func bioToggle(_ s: UISwitch) { lm.useBiometrics = s.isOn }
@@ -97,12 +118,37 @@ final class SettingsViewController: UITableViewController {
             }
             return
         }
+        if Section(rawValue: indexPath.section) == .modules {
+            let (name, key) = moduleInfo(indexPath.row)
+            editModulePassword(key: key, name: name)
+            return
+        }
         switch indexPath.row {
         case 0: changePassword()
         case 1: editSecondary()
         case 2: editDuress()
         default: break
         }
+    }
+
+    // MARK: - 每模块独立密码
+    private func editModulePassword(key: String, name: String) {
+        let a = UIAlertController(title: "「\(name)」独立密码",
+                                  message: "设置后，打开该板块需输入独立密码；留空则清除（回退主密码）。", preferredStyle: .alert)
+        a.addTextField { $0.isSecureTextEntry = true; $0.placeholder = "独立密码（≥4位，留空清除）" }
+        a.addTextField { $0.isSecureTextEntry = true; $0.placeholder = "确认" }
+        a.addAction(UIAlertAction(title: "保存", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            let p = a.textFields![0].text ?? ""
+            let c = a.textFields![1].text ?? ""
+            if p.isEmpty { self.lm.setModulePassword(key, nil); self.alert("已清除「\(name)」独立密码"); return }
+            guard p.count >= 4 else { self.alert("至少 4 位"); return }
+            guard p == c else { self.alert("两次不一致"); return }
+            self.lm.setModulePassword(key, p)
+            self.alert("「\(name)」独立密码已设置")
+        })
+        a.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(a, animated: true)
     }
 
     // MARK: - 修改主密码

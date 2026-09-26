@@ -41,7 +41,8 @@ final class FeatureLockController: UIViewController, UITextFieldDelegate {
             LockManager.shared.lockModule(moduleKey)
         }
         if childShown { removeChild() }
-        if lockView == nil { showLock() }
+        // 仅在 view 已加载时补锁屏，避免触发 viewDidLoad 重复 showLock 叠加
+        if isViewLoaded && lockView == nil { showLock() }
     }
 
     private func removeChild() {
@@ -52,11 +53,12 @@ final class FeatureLockController: UIViewController, UITextFieldDelegate {
     }
 
     private func showLock() {
-        let useSecondary = LockManager.shared.hasSecondary
+        let lm = LockManager.shared
+        let sub = lm.hasModulePassword(moduleKey) ? "输入该板块独立密码" : "输入应用密码以访问此板块"
         lockView = PasswordLockView(title: "\(featureName)已锁定",
                                     submitTitle: "解锁",
-                                    showFaceID: LockManager.shared.useBiometrics && LockManager.canUseBiometrics(),
-                                    subtitle: useSecondary ? "输入二级密码以访问此板块" : "输入应用密码以访问此板块")
+                                    showFaceID: lm.useBiometrics && LockManager.canUseBiometrics(),
+                                    subtitle: sub)
         lockView!.field.delegate = self
         lockView!.field.returnKeyType = .go
         lockView!.submit.addTarget(self, action: #selector(submit), for: .touchUpInside)
@@ -93,9 +95,10 @@ final class FeatureLockController: UIViewController, UITextFieldDelegate {
 
     @objc private func submit() {
         let pwd = lockView?.field.text ?? ""
-        let ok = LockManager.shared.hasSecondary
-            ? LockManager.shared.verifySecondary(pwd)
-            : LockManager.shared.verifyMaster(pwd)
+        let lm = LockManager.shared
+        let ok = lm.hasModulePassword(moduleKey)
+            ? lm.verifyModulePassword(moduleKey, pwd)
+            : lm.verifyMaster(pwd)
         if ok {
             LockManager.shared.unlockModule(moduleKey)
             lockView?.removeFromSuperview()

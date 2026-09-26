@@ -47,7 +47,7 @@ final class VaultViewController: UIViewController {
         t.textColor = .white
         t.font = .systemFont(ofSize: 20, weight: .semibold)
         let note = UILabel()
-        note.text = "将同时设置一个「诱饵密码」，输入诱饵密码只会看到空相册。"
+        note.text = "设置主密码，可另设备用密码（备用密码解锁用途）。"
         note.textColor = .systemGray2
         note.font = .systemFont(ofSize: 13)
         note.numberOfLines = 0
@@ -147,7 +147,7 @@ final class VaultViewController: UIViewController {
         faceBtn.setTitle(" 使用 FaceID / 指纹", for: .normal)
         faceBtn.addTarget(self, action: #selector(faceAuth), for: .touchUpInside)
 
-        hintLabel.text = "输入诱饵密码将进入空相册"
+        hintLabel.text = " "
         hintLabel.textColor = .systemGray2
         hintLabel.font = .systemFont(ofSize: 12)
 
@@ -243,21 +243,12 @@ final class VaultViewController: UIViewController {
                                    target: self, action: #selector(reLock))
         navigationItem.rightBarButtonItems = [add, lock]
         navigationItem.leftBarButtonItem = nil
-        if decoyBanner() { cv.isHidden = true }
+        // 诱饵进入：相册正常显示（数据为空），不出现任何“诱饵/空相册”提示
+        _ = decoyBanner()
     }
 
-    private func decoyBanner() -> Bool {
-        guard state == .decoy else { return false }
-        let l = UILabel()
-        l.text = "（诱饵模式 · 空相册）"
-        l.textColor = .systemGray2
-        l.textAlignment = .center
-        l.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(l)
-        l.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true
-        l.centerYAnchor.constraint(equalTo: view.centerYAnchor).isActive = true
-        return true
-    }
+    /// 诱饵状态不显示任何标识，让空相册看起来与正常一致
+    private func decoyBanner() -> Bool { false }
 
     @objc func reLock() {
         guard state != .locked else { return } // 幂等：已在锁定态不重建
