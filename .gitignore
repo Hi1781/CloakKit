@@ -1,0 +1,19 @@
+# macOS / Xcode
+.DS_Store
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+
+# 编译产物（交叉编译）
+build-linux/
+*.ipa
+*.zip
+
+# 附件/会话等本地目录
+.sessions/
+attachments/
+
+# 密钥等敏感信息
+*.p12
+*.mobileprovision
