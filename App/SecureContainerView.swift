@@ -22,7 +22,12 @@ final class SecureContainerView: UITextField {
         isSecureTextEntry = true
         borderStyle = .none
         backgroundColor = .clear
-        textColor = .clear
+        // 关键：安全字形用「不透明」深色（与深色背景同色，正常不可见）。
+        // 若用 .clear，系统可能判定“没有可见安全内容”而不做截图黑化——这正是之前不黑的原因。
+        // isSecureTextEntry 字段在截屏/录屏时，系统把其文本区域黑化为色块（最顶层）→ 全屏黑。
+        textColor = UIColor(white: 0.06, alpha: 1)
+        font = UIFont.systemFont(ofSize: 320)
+        text = String(repeating: "●", count: 200)
         translatesAutoresizingMaskIntoConstraints = false
     }
     required init?(coder: NSCoder) { fatalError() }
