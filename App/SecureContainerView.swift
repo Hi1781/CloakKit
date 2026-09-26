@@ -1,17 +1,16 @@
 import UIKit
 
-/// 安全渲染容器：透明 UITextField（isSecureTextEntry），内容挂进字段内部。
+/// 安全渲染层：透明 UITextField（isSecureTextEntry），占满全屏。
 ///
-/// 最终定位（经多轮实机验证）：**iOS 的 secure 截图保护不会把挂载的普通子视图在截图时变黑**，
-/// 无论字段是否激活都是如此。因此本容器**彻底放弃抢占第一响应者**，保证输入框 100% 可正常
-/// 点击聚焦（这是反复出问题、最伤体验的点）。isSecureTextEntry 仅作尽力而为的保留，
-/// 不承担“截图黑屏”承诺。
+/// 经验证（实机截图）：isSecureTextEntry 字段的安全文本 z 序永远在子视图之上，
+/// 若把内容作为子视图挂进字段内，正常显示会被 ● 安全字形盖住（OCR 已确认遮挡文字）。
+/// 因此改为「底层安全层」结构：
+/// - SecureContainerView 作为 window 最底层的安全层（isSecureTextEntry + 不透明深色 ● 占满）；
+/// - 真实内容作为**上层不透明层**盖住它 → 正常显示无 ● 露出；
+/// - 截屏/录屏时，系统把 secure 字段文本区域黑化为色块 → 截图全黑（传纸条同款副作用）。
 ///
-/// 真正确定有效的防泄露（由 ScreenGuard / 通讯阅后即焚承担）：
-/// 1. 录屏/投屏检测（UIScreen.isCaptured）→ 全屏覆盖黑屏（录屏确实能黑）；
-/// 2. 截屏/录屏 → 自动上报对端安全告警（威慑 + 溯源）；
-/// 3. 通讯阅后即焚 → 内容读后销毁、本地不落地（截图截不到有价值内容）。
-/// iOS 无公开 API 能让普通 App 视图截屏变黑，此为系统限制；翻拍、越狱亦无法防范。
+/// ⚠️ 诚实边界：此黑化是系统副作用，随 iOS 大版本可能失效；翻拍、越狱无法防范。
+/// 配套防泄露：录屏检测全屏覆盖 + 截屏/录屏上报对端 + 通讯阅后即焚不落地。
 final class SecureContainerView: UITextField {
 
     /// 不抢焦点，杜绝输入框被拦截
@@ -22,33 +21,13 @@ final class SecureContainerView: UITextField {
         isSecureTextEntry = true
         borderStyle = .none
         backgroundColor = .clear
-        // 关键：安全字形用「不透明」深色（与深色背景同色，正常不可见）。
-        // 若用 .clear，系统可能判定“没有可见安全内容”而不做截图黑化——这正是之前不黑的原因。
-        // isSecureTextEntry 字段在截屏/录屏时，系统把其文本区域黑化为色块（最顶层）→ 全屏黑。
+        // 不透明深色安全字形占满（正常被内容层盖住不可见；截屏时被系统黑化）
         textColor = UIColor(white: 0.06, alpha: 1)
         font = UIFont.systemFont(ofSize: 320)
         text = String(repeating: "●", count: 200)
         translatesAutoresizingMaskIntoConstraints = false
     }
     required init?(coder: NSCoder) { fatalError() }
-
-    /// 字段自身不拦截触摸：命中自己则穿透到下层，命中内容子视图则正常交给内容
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let hit = super.hitTest(point, with: event)
-        return hit === self ? nil : hit
-    }
-
-    /// 把真实内容挂进字段内部（布局稳定）
-    func embed(_ content: UIView) {
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: topAnchor),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor),
-        ])
-    }
 }
 
 /// 把任意根控制器（TabBar / 解锁页）的内容放进安全容器
@@ -63,8 +42,11 @@ final class SecureWrapperViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(white: 0.06, alpha: 1)
+        let bg = UIColor(white: 0.06, alpha: 1)
+        view.backgroundColor = bg
 
+        // 底层：secure 安全层（isSecureTextEntry + 不透明深色安全字形占满）。
+        // 截屏/录屏时系统把该字段文本区域黑化 → 全屏黑。
         let s = SecureContainerView()
         s.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(s)
@@ -75,8 +57,17 @@ final class SecureWrapperViewController: UIViewController {
             s.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
+        // 上层：真实内容，不透明深色背景盖住 secure 字形 → 正常显示无 ● 露出。
         addChild(content)
-        s.embed(content.view)
+        content.view.translatesAutoresizingMaskIntoConstraints = false
+        content.view.backgroundColor = bg
+        view.addSubview(content.view)
+        NSLayoutConstraint.activate([
+            content.view.topAnchor.constraint(equalTo: view.topAnchor),
+            content.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            content.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
         content.didMove(toParent: self)
     }
 
