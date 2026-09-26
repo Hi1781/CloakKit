@@ -1,31 +1,28 @@
 import UIKit
 
-/// 安全渲染容器：透明 UITextField（isSecureTextEntry），整页内容挂进字段内部。
+/// 安全渲染容器：透明 UITextField（isSecureTextEntry），内容挂进字段内部。
 ///
-/// 对齐传纸条（逆向自其 `SecureContainerView.swift` + `setSecureTextEntry`）机制：
-/// - 内容作为子视图 addSubview 到 UITextField 本身（布局稳定）；
-/// - 字段保持**激活（first responder）**启动系统对 secure 字段的截图保护渲染；
-/// - hitTest 让字段自身**穿透**，不拦截触摸 → 密码框/搜索/聊天输入框仍可正常点击聚焦；
-/// - 真实输入框聚焦时让安全字段让位（避免抢焦点导致无法输入），输入完抢回激活。
+/// 最终定位（经多轮实机验证）：**iOS 的 secure 截图保护不会把挂载的普通子视图在截图时变黑**，
+/// 无论字段是否激活都是如此。因此本容器**彻底放弃抢占第一响应者**，保证输入框 100% 可正常
+/// 点击聚焦（这是反复出问题、最伤体验的点）。isSecureTextEntry 仅作尽力而为的保留，
+/// 不承担“截图黑屏”承诺。
 ///
-/// ⚠️ 诚实边界：iOS 的 secure 截图保护主要作用于字段自身，能否把挂载的普通子视图整块黑化
-/// 取决于系统实现且随大版本变化（传纸条同样依赖这一副作用）。配套：录屏检测黑屏 + 阅后即焚
-/// 不落地 + 截屏上报对端威慑。翻拍、越狱无法防范。
+/// 真正确定有效的防泄露（由 ScreenGuard / 通讯阅后即焚承担）：
+/// 1. 录屏/投屏检测（UIScreen.isCaptured）→ 全屏覆盖黑屏（录屏确实能黑）；
+/// 2. 截屏/录屏 → 自动上报对端安全告警（威慑 + 溯源）；
+/// 3. 通讯阅后即焚 → 内容读后销毁、本地不落地（截图截不到有价值内容）。
+/// iOS 无公开 API 能让普通 App 视图截屏变黑，此为系统限制；翻拍、越狱亦无法防范。
 final class SecureContainerView: UITextField {
 
-    /// 允许成为第一响应者以激活 secure 保护通道；空 inputView 规避弹键盘
-    override var canBecomeFirstResponder: Bool { true }
+    /// 不抢焦点，杜绝输入框被拦截
+    override var canBecomeFirstResponder: Bool { false }
 
     init() {
         super.init(frame: .zero)
         isSecureTextEntry = true
         borderStyle = .none
         backgroundColor = .clear
-        // 占位安全字形，扩大系统对 secure 字段的保护范围（透明，正常显示不可见）
         textColor = .clear
-        font = UIFont.systemFont(ofSize: 300)
-        text = String(repeating: "●", count: 40)
-        inputView = UIView(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -49,10 +46,9 @@ final class SecureContainerView: UITextField {
     }
 }
 
-/// 把任意根控制器（TabBar / 解锁页）的内容放进安全容器，整页防截屏
+/// 把任意根控制器（TabBar / 解锁页）的内容放进安全容器
 final class SecureWrapperViewController: UIViewController {
     private let content: UIViewController
-    private var secure: SecureContainerView?
 
     init(content: UIViewController) {
         self.content = content
@@ -73,37 +69,10 @@ final class SecureWrapperViewController: UIViewController {
             s.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             s.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
-        secure = s
 
         addChild(content)
         s.embed(content.view)
         content.didMove(toParent: self)
-
-        // 真实输入框聚焦时让安全字段让位（避免抢焦点），输入完短暂抢回以持续激活保护
-        let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(inputBegan),
-                       name: UITextField.textDidBeginEditingNotification, object: nil)
-        nc.addObserver(self, selector: #selector(inputEnded),
-                       name: UITextField.textDidEndEditingNotification, object: nil)
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        secure?.becomeFirstResponder()
-    }
-
-    @objc private func inputBegan() {
-        secure?.resignFirstResponder()
-    }
-    @objc private func inputEnded() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.secure?.becomeFirstResponder()
-        }
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        secure?.resignFirstResponder()
     }
 
     override var shouldAutorotate: Bool { content.shouldAutorotate }
