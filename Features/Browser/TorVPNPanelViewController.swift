@@ -150,9 +150,9 @@ final class TorVPNPanelViewController: UIViewController {
         Socks5Client.probe(cfg) { [weak self] ok, ms, err in
             guard let self = self else { return }
             if ok {
-                self.statusLabel.text = "✅ 已通过节点建立链路 · \(String(format: "%.0fms", ms))\n节点：\(cfg.host):\(cfg.port)"
+                self.statusLabel.text = "已通过节点建立链路 · \(String(format: "%.0fms", ms))\n节点：\(cfg.host):\(cfg.port)"
             } else {
-                self.statusLabel.text = "❌ 连接失败 · \(err)\n节点：\(cfg.host):\(cfg.port)"
+                self.statusLabel.text = "连接失败 · \(err)\n节点：\(cfg.host):\(cfg.port)"
             }
         }
     }
@@ -287,8 +287,8 @@ final class NodeConfigViewController: UIViewController, UITextFieldDelegate {
         testLabel.text = "正在连接 \(host):\(port) …"
         Socks5Client.probe(Socks5Client.Config(host: host, port: port, user: "", pass: key)) { [weak self] ok, ms, err in
             self?.testLabel.text = ok
-                ? "✅ 连接成功 · \(String(format: "%.0fms", ms)) · 代理链路正常"
-                : "❌ 失败：\(err)"
+                ? "连接成功 · \(String(format: "%.0fms", ms)) · 代理链路正常"
+                : "失败：\(err)"
         }
     }
 

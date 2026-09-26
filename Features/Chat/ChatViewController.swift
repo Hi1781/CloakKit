@@ -405,18 +405,18 @@ final class MessageCell: UITableViewCell {
         case "file":
             label.isHidden = false; thumb.isHidden = true; fileIcon.isHidden = false
             fileIcon.image = UIImage(systemName: "doc.fill")
-            label.text = "📎 " + m.text
+            label.text = "[附件] " + m.text
         case "audio":
             label.isHidden = false; thumb.isHidden = true; fileIcon.isHidden = false
             fileIcon.image = UIImage(systemName: "play.fill")
-            label.text = "🔊 语音 \(m.text)s · 点击播放"
+            label.text = "语音 \(m.text)s · 点击播放"
         default:
             label.isHidden = false; thumb.isHidden = true; fileIcon.isHidden = true
             label.text = m.text
         }
         // 阅后即焚标记
         if let b = m.burnAfter, b > 0, m.kind != "system" {
-            label.text = (label.text ?? "") + "  🔥\(b)s"
+            label.text = (label.text ?? "") + "  [\(b)s 后销毁]"
         }
         label.textColor = .white
         label.textAlignment = right ? .right : .left

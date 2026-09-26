@@ -105,6 +105,22 @@ final class LockManager {
         return verify(pwd: pwd, saltKey: "mod_\(key)_salt", hashKey: "mod_\(key)_hash")
     }
 
+    // MARK: - 每模块诱饵密码（照搬私密相册：诱饵→进入空壳）
+    func hasModuleDecoy(_ key: String) -> Bool { defs.data(forKey: "mod_\(key)_decoy_salt") != nil }
+    func setModuleDecoy(_ key: String, _ pwd: String?) {
+        if let p = pwd, !p.isEmpty {
+            write(pwd: p, saltKey: "mod_\(key)_decoy_salt", hashKey: "mod_\(key)_decoy_hash")
+        } else {
+            defs.removeObject(forKey: "mod_\(key)_decoy_salt")
+            defs.removeObject(forKey: "mod_\(key)_decoy_hash")
+        }
+        unlockedModules.remove(key)
+    }
+    func verifyModuleDecoy(_ key: String, _ pwd: String) -> Bool {
+        guard hasModuleDecoy(key) else { return false }
+        return verify(pwd: pwd, saltKey: "mod_\(key)_decoy_salt", hashKey: "mod_\(key)_decoy_hash")
+    }
+
     // MARK: - 基础哈希工具
     private func write(pwd: String, saltKey: String, hashKey: String) {
         let salt = VaultCrypto.random(VaultCrypto.saltSize)

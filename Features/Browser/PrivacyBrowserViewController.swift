@@ -21,7 +21,8 @@ final class PrivacyBrowserViewController: UIViewController, WKNavigationDelegate
         cfg.defaultWebpagePreferences.allowsContentJavaScript = true
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        webView.isOpaque = false
+        // 不透明深色背景：避免 webView 半透明透出底层安全层导致切回黑屏
+        webView.isOpaque = true
         webView.backgroundColor = UIColor(white: 0.05, alpha: 1)
         webView.translatesAutoresizingMaskIntoConstraints = false
 

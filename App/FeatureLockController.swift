@@ -1,13 +1,17 @@
 import UIKit
 
-/// 模块级锁容器：浏览器 / 传话 / 互传 等敏感板块包一层，验证主密码后才显示内容
-final class FeatureLockController: UIViewController, UITextFieldDelegate {
+/// 模块级锁容器：浏览器 / 传话 / 互传 等敏感板块，密码页与逻辑照搬私密相册页。
+/// - 首次进入且未设密码 → 相册式「首次设置」（主密码 + 诱饵密码）
+/// - 已设密码 → 相册式「解锁」（主密码→真实内容；诱饵密码→空壳页面，不显示任何标识）
+/// - 支持 FaceID / 指纹
+final class FeatureLockController: UIViewController {
 
     private let childVC: UIViewController
     private let moduleKey: String
     private let featureName: String
-    private var lockView: PasswordLockView?
+    private var lockView: ModuleVaultLockView?
     private var childShown = false
+    private var decoyShown = false
 
     init(child: UIViewController, moduleKey: String, featureName: String) {
         self.childVC = child
@@ -20,29 +24,34 @@ final class FeatureLockController: UIViewController, UITextFieldDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         GlassTheme.installScene(on: view)
-        if LockManager.shared.isModuleUnlocked(moduleKey) {
+        let lm = LockManager.shared
+        if !lm.hasModulePassword(moduleKey) {
+            showSetupLock()          // 首次：相册式设置（主+诱饵）
+        } else if lm.isModuleUnlocked(moduleKey) {
             presentChild()
         } else {
-            showLock()
+            showUnlockLock()          // 相册式解锁
         }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // 从其他页切回：若已锁定则确保回到锁屏
-        if !LockManager.shared.isModuleUnlocked(moduleKey) && childShown {
+        let lm = LockManager.shared
+        if !lm.isModuleUnlocked(moduleKey) && (childShown || decoyShown) {
             lockNow()
         }
     }
 
     /// 切走其他页面时调用：立即锁定本板块（幂等）
     func lockNow() {
-        if LockManager.shared.isModuleUnlocked(moduleKey) {
-            LockManager.shared.lockModule(moduleKey)
+        let lm = LockManager.shared
+        if lm.isModuleUnlocked(moduleKey) { lm.lockModule(moduleKey) }
+        removeChild()
+        decoyShown = false
+        if isViewLoaded && lockView == nil {
+            if lm.hasModulePassword(moduleKey) { showUnlockLock() } else { showSetupLock() }
         }
-        if childShown { removeChild() }
-        // 仅在 view 已加载时补锁屏，避免触发 viewDidLoad 重复 showLock 叠加
-        if isViewLoaded && lockView == nil { showLock() }
     }
 
     private func removeChild() {
@@ -52,30 +61,72 @@ final class FeatureLockController: UIViewController, UITextFieldDelegate {
         childShown = false
     }
 
-    private func showLock() {
-        let lm = LockManager.shared
-        let sub = lm.hasModulePassword(moduleKey) ? "输入该板块独立密码" : "输入应用密码以访问此板块"
-        lockView = PasswordLockView(title: "\(featureName)已锁定",
-                                    submitTitle: "解锁",
-                                    showFaceID: lm.useBiometrics && LockManager.canUseBiometrics(),
-                                    subtitle: sub)
-        lockView!.field.delegate = self
-        lockView!.field.returnKeyType = .go
-        lockView!.submit.addTarget(self, action: #selector(submit), for: .touchUpInside)
-        if let face = lockView!.viewWithTag(99) as? UIButton {
-            face.addTarget(self, action: #selector(faceAuth), for: .touchUpInside)
+    // MARK: - 首次设置（照搬相册 showSetup）
+    private func showSetupLock() {
+        let v = ModuleVaultLockView(featureName: featureName, isSetup: true, showFaceID: false)
+        v.onSetup = { [weak self] master, decoy in
+            guard let self = self else { return }
+            let lm = LockManager.shared
+            lm.setModulePassword(self.moduleKey, master)
+            lm.setModuleDecoy(self.moduleKey, decoy)
+            lm.unlockModule(self.moduleKey)
+            self.tearDownLock()
+            self.presentChild()
         }
-        view.addSubview(lockView!)
+        install(v)
+    }
+
+    // MARK: - 解锁（照搬相册 showLock）
+    private func showUnlockLock() {
+        let lm = LockManager.shared
+        let v = ModuleVaultLockView(featureName: featureName, isSetup: false,
+                                    showFaceID: lm.useBiometrics && LockManager.canUseBiometrics())
+        v.onUnlock = { [weak self] result, pwd in
+            guard let self = self else { return }
+            switch result {
+            case .real: self.presentChild()
+            case .decoy: self.presentDecoy()
+            case .none: self.unlockTry(pwd)
+            }
+        }
+        install(v)
+    }
+
+    private func unlockTry(_ pwd: String) {
+        guard let v = lockView else { return }
+        let lm = LockManager.shared
+        if lm.verifyModulePassword(moduleKey, pwd) {
+            lm.unlockModule(moduleKey)
+            tearDownLock()
+            presentChild()
+        } else if lm.verifyModuleDecoy(moduleKey, pwd) {
+            tearDownLock()
+            presentDecoy()
+        } else {
+            v.setHint("密码错误")
+        }
+    }
+
+    private func install(_ v: ModuleVaultLockView) {
+        lockView = v
+        view.addSubview(v)
         NSLayoutConstraint.activate([
-            lockView!.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            lockView!.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            lockView!.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            lockView!.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            v.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            v.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            v.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            v.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
     }
 
+    private func tearDownLock() {
+        lockView?.removeFromSuperview()
+        lockView = nil
+    }
+
+    // MARK: - 内容
     private func presentChild() {
         childShown = true
+        decoyShown = false
         addChild(childVC)
         childVC.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(childVC.view)
@@ -86,35 +137,25 @@ final class FeatureLockController: UIViewController, UITextFieldDelegate {
             childVC.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         childVC.didMove(toParent: self)
-        // 让子控制器能正常压栈导航
         navigationItem.title = featureName
         navigationItem.rightBarButtonItems = childVC.navigationItem.rightBarButtonItems
     }
 
-    func textFieldShouldReturn(_ f: UITextField) -> Bool { submit(); return true }
+    /// 诱饵密码进入的空壳：显示一个看起来正常但内容为空的页面（不出现任何诱饵标识）
+    private func presentDecoy() {
+        decoyShown = true
+        childShown = false
+        navigationItem.title = featureName
+        navigationItem.rightBarButtonItems = nil
 
-    @objc private func submit() {
-        let pwd = lockView?.field.text ?? ""
-        let lm = LockManager.shared
-        let ok = lm.hasModulePassword(moduleKey)
-            ? lm.verifyModulePassword(moduleKey, pwd)
-            : lm.verifyMaster(pwd)
-        if ok {
-            LockManager.shared.unlockModule(moduleKey)
-            lockView?.removeFromSuperview()
-            presentChild()
-        } else {
-            lockView?.hint.text = "密码错误"
-        }
-        lockView?.field.text = ""
-    }
-
-    @objc private func faceAuth() {
-        LockManager.biometricPrompt(reason: "解锁\(featureName)") { [weak self] ok in
-            guard let self = self, ok else { return }
-            LockManager.shared.unlockModule(self.moduleKey)
-            self.lockView?.removeFromSuperview()
-            self.presentChild()
-        }
+        let empty = UIView()
+        empty.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(empty)
+        NSLayoutConstraint.activate([
+            empty.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            empty.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            empty.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            empty.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
     }
 }

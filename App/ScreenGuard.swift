@@ -20,7 +20,7 @@ final class ScreenGuard {
         ) { _ in
             updateRecording()
             if UIScreen.main.isCaptured {
-                ChatStore.shared.addThreatAlert("🔒 对方设备正在录屏/投屏，已自动上报安全告警")
+                ChatStore.shared.addThreatAlert("对方设备正在录屏/投屏，已自动上报安全告警")
             }
         }
         observers.append(capObs)
@@ -30,7 +30,7 @@ final class ScreenGuard {
         let shotObs = NotificationCenter.default.addObserver(
             forName: UIApplication.userDidTakeScreenshotNotification, object: nil, queue: .main
         ) { _ in
-            ChatStore.shared.addThreatAlert("⚠️ 对方设备已截屏，已自动上报安全告警")
+            ChatStore.shared.addThreatAlert("对方设备已截屏，已自动上报安全告警")
             showToast("已检测到截屏 · 已上报对方")
         }
         observers.append(shotObs)

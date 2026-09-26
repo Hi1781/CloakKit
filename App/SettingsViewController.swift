@@ -131,20 +131,28 @@ final class SettingsViewController: UITableViewController {
         }
     }
 
-    // MARK: - 每模块独立密码
+    // MARK: - 每模块独立密码（含诱饵密码，照搬私密相册）
     private func editModulePassword(key: String, name: String) {
         let a = UIAlertController(title: "「\(name)」独立密码",
-                                  message: "设置后，打开该板块需输入独立密码；留空则清除（回退主密码）。", preferredStyle: .alert)
+                                  message: "设置后打开该板块需输入独立密码；可另设诱饵密码进入空壳；留空清除（回退主密码）。", preferredStyle: .alert)
         a.addTextField { $0.isSecureTextEntry = true; $0.placeholder = "独立密码（≥4位，留空清除）" }
         a.addTextField { $0.isSecureTextEntry = true; $0.placeholder = "确认" }
+        a.addTextField { $0.isSecureTextEntry = true; $0.placeholder = "诱饵密码（可选，≥4位）" }
         a.addAction(UIAlertAction(title: "保存", style: .default) { [weak self] _ in
             guard let self = self else { return }
             let p = a.textFields![0].text ?? ""
             let c = a.textFields![1].text ?? ""
-            if p.isEmpty { self.lm.setModulePassword(key, nil); self.alert("已清除「\(name)」独立密码"); return }
-            guard p.count >= 4 else { self.alert("至少 4 位"); return }
+            let d = a.textFields![2].text ?? ""
+            if p.isEmpty {
+                self.lm.setModulePassword(key, nil); self.lm.setModuleDecoy(key, nil)
+                self.alert("已清除「\(name)」独立密码"); return
+            }
+            guard p.count >= 4 else { self.alert("独立密码至少 4 位"); return }
             guard p == c else { self.alert("两次不一致"); return }
             self.lm.setModulePassword(key, p)
+            if d.isEmpty { self.lm.setModuleDecoy(key, nil) }
+            else if d.count >= 4 { self.lm.setModuleDecoy(key, d) }
+            else { self.alert("诱饵密码需 ≥4 位"); return }
             self.alert("「\(name)」独立密码已设置")
         })
         a.addAction(UIAlertAction(title: "取消", style: .cancel))
