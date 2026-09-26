@@ -1,38 +1,37 @@
 import UIKit
 
-/// 安全渲染层：透明 UITextField（isSecureTextEntry），占满全屏。
+/// 安全渲染层：全屏 isSecureTextEntry UITextField，照搬传纸条 SecureContainerView 机制。
 ///
-/// 经验证（实机截图）：isSecureTextEntry 字段的安全文本 z 序永远在子视图之上，
-/// 若把内容作为子视图挂进字段内，正常显示会被 ● 安全字形盖住（OCR 已确认遮挡文字）。
-/// 因此改为「底层安全层」结构：
-/// - SecureContainerView 作为 window 最底层的安全层（isSecureTextEntry + 不透明深色 ● 占满）；
-/// - 真实内容作为**上层不透明层**盖住它 → 正常显示无 ● 露出；
-/// - 截屏/录屏时，系统把 secure 字段文本区域黑化为色块 → 截图全黑（传纸条同款副作用）。
+/// 关键机制（从传纸条二进制逆向确认：SecureContainerView + setSecureTextEntry）：
+/// 系统对「激活（first responder）的 isSecureTextEntry 字段」，在截屏/录屏时把整个字段
+/// bounds 渲染为安全色块 → 全屏黑化。与字形是否可见无关（因此空文本即可，正常界面干净）。
+///
+/// 适配（保证正常可用）：
+/// - 空文本 + 透明背景 → 正常界面完全不遮挡；
+/// - inputView = 空视图 → 激活也不弹系统键盘；
+/// - hitTest 一律穿透 → 不拦截任何触摸，输入框照常可点；
+/// - 内容放在上层不透明层 → 各页面内容正常显示。
 ///
 /// 诚实边界：此黑化是系统副作用，随 iOS 大版本可能失效；翻拍、越狱无法防范。
-/// 配套防泄露：录屏检测全屏覆盖 + 截屏/录屏上报对端 + 通讯阅后即焚不落地。
 final class SecureContainerView: UITextField {
 
-    /// 不抢焦点，杜绝输入框被拦截
-    override var canBecomeFirstResponder: Bool { false }
+    /// 允许成为第一响应者（激活），以触发系统对 secure 字段的截图黑化
+    override var canBecomeFirstResponder: Bool { true }
 
     init() {
         super.init(frame: .zero)
         isSecureTextEntry = true
         borderStyle = .none
         backgroundColor = .clear
-        // 照搬传纸条：secure 安全层作为「最底层」，用不透明深色安全字形占满。
-        // 正常：上层内容（透明背景）盖住 UI，安全字形在空白区以黑色显示（与黑背景融合，不可见）；
-        // 截屏/录屏：系统把 secure 字段的文本区域黑化为色块（最顶层）→ 全屏黑。
-        textColor = UIColor(white: 0.06, alpha: 1)
-        font = UIFont.systemFont(ofSize: 320)
-        text = String(repeating: "●", count: 200)
+        textColor = .clear
+        text = ""
+        // 空 inputView：激活时用空白视图替换系统键盘，避免弹键盘
+        inputView = UIView(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
     }
     required init?(coder: NSCoder) { fatalError() }
 
     /// 安全层完全不参与触摸：一律穿透到下层内容，绝不拦截任何点击。
-    /// 否则安全层内部的文本子视图会吃掉触摸，导致语音/照片/文件等无法交互。
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         return nil
     }
@@ -41,6 +40,7 @@ final class SecureContainerView: UITextField {
 /// 把任意根控制器（TabBar / 解锁页）的内容放进安全容器
 final class SecureWrapperViewController: UIViewController {
     private let content: UIViewController
+    private var secure: SecureContainerView?
 
     init(content: UIViewController) {
         self.content = content
@@ -53,8 +53,7 @@ final class SecureWrapperViewController: UIViewController {
         let bg = UIColor(white: 0.06, alpha: 1)
         view.backgroundColor = bg
 
-        // 底层：secure 安全层（isSecureTextEntry + 不透明深色安全字形占满）。
-        // 截屏/录屏时系统黑化其文本区域 → 全屏黑。
+        // 底层：secure 安全层（isSecureTextEntry + 空文本透明）。激活后截屏黑化全屏。
         let s = SecureContainerView()
         s.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(s)
@@ -64,12 +63,12 @@ final class SecureWrapperViewController: UIViewController {
             s.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             s.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
+        secure = s
 
-        // 上层：真实内容，透明背景 → UI 元素盖在安全字形之上正常显示，
-        // 安全字形在空白区以黑色显示（与黑背景融合不可见），且 secure 始终可见 → 触发截图黑化。
+        // 上层：真实内容，不透明深色背景 → 所有页面内容正常显示，不露出安全层。
         addChild(content)
         content.view.translatesAutoresizingMaskIntoConstraints = false
-        content.view.backgroundColor = .clear
+        content.view.backgroundColor = bg
         view.addSubview(content.view)
         NSLayoutConstraint.activate([
             content.view.topAnchor.constraint(equalTo: view.topAnchor),
@@ -78,6 +77,14 @@ final class SecureWrapperViewController: UIViewController {
             content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
         content.didMove(toParent: self)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // 激活 secure 字段，触发系统截图黑化（viewDidLoad 时窗口可能未就绪）
+        if secure?.isFirstResponder != true {
+            secure?.becomeFirstResponder()
+        }
     }
 
     override var shouldAutorotate: Bool { content.shouldAutorotate }
