@@ -1,22 +1,18 @@
 import UIKit
 
-/// 安全渲染层：全屏 isSecureTextEntry UITextField，照搬传纸条 SecureContainerView 机制。
+/// 安全渲染层：全屏 isSecureTextEntry UITextField。
 ///
-/// 关键机制（从传纸条二进制逆向确认：SecureContainerView + setSecureTextEntry）：
-/// 系统对「激活（first responder）的 isSecureTextEntry 字段」，在截屏/录屏时把整个字段
-/// bounds 渲染为安全色块 → 全屏黑化。与字形是否可见无关（因此空文本即可，正常界面干净）。
+/// 结论（多轮实机验证）：iOS 系统层面，「内容正常可见」与「全 App 截屏变黑」不可兼得——
+/// 黑化需要系统识别「可见的安全内容」，而可见内容必然遮挡界面；激活 secure 字段会引出
+/// 屏幕底部输入提示条的副作用。传纸条能做到靠的是私有副作用，无法在二进制层面可靠复刻。
 ///
-/// 适配（保证正常可用）：
-/// - 空文本 + 透明背景 → 正常界面完全不遮挡；
-/// - inputView = 空视图 → 激活也不弹系统键盘；
-/// - hitTest 一律穿透 → 不拦截任何触摸，输入框照常可点；
-/// - 内容放在上层不透明层 → 各页面内容正常显示。
-///
-/// 诚实边界：此黑化是系统副作用，随 iOS 大版本可能失效；翻拍、越狱无法防范。
+/// 因此本层**不激活、空文本、透明、穿透**，对界面零副作用（无遮挡、无底部提示条、不拦输入）。
+/// 截屏黑化放弃；确定有效的防泄露由配套承担：录屏检测全屏覆盖（UIScreen.isCaptured 实测可黑）、
+/// 截屏/录屏上报对端、通讯阅后即焚不落地。
 final class SecureContainerView: UITextField {
 
-    /// 允许成为第一响应者（激活），以触发系统对 secure 字段的截图黑化
-    override var canBecomeFirstResponder: Bool { true }
+    /// 不激活：避免弹输入提示条、避免抢焦点卡输入
+    override var canBecomeFirstResponder: Bool { false }
 
     init() {
         super.init(frame: .zero)
@@ -25,8 +21,6 @@ final class SecureContainerView: UITextField {
         backgroundColor = .clear
         textColor = .clear
         text = ""
-        // 空 inputView：激活时用空白视图替换系统键盘，避免弹键盘
-        inputView = UIView(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -40,7 +34,6 @@ final class SecureContainerView: UITextField {
 /// 把任意根控制器（TabBar / 解锁页）的内容放进安全容器
 final class SecureWrapperViewController: UIViewController {
     private let content: UIViewController
-    private var secure: SecureContainerView?
 
     init(content: UIViewController) {
         self.content = content
@@ -53,7 +46,7 @@ final class SecureWrapperViewController: UIViewController {
         let bg = UIColor(white: 0.06, alpha: 1)
         view.backgroundColor = bg
 
-        // 底层：secure 安全层（isSecureTextEntry + 空文本透明）。激活后截屏黑化全屏。
+        // 底层：secure 安全层（不激活、空文本、穿透，对界面零副作用）
         let s = SecureContainerView()
         s.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(s)
@@ -63,9 +56,8 @@ final class SecureWrapperViewController: UIViewController {
             s.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             s.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
-        secure = s
 
-        // 上层：真实内容，不透明深色背景 → 所有页面内容正常显示，不露出安全层。
+        // 上层：真实内容，不透明深色背景 → 所有页面内容正常显示。
         addChild(content)
         content.view.translatesAutoresizingMaskIntoConstraints = false
         content.view.backgroundColor = bg
@@ -77,14 +69,6 @@ final class SecureWrapperViewController: UIViewController {
             content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
         content.didMove(toParent: self)
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        // 激活 secure 字段，触发系统截图黑化（viewDidLoad 时窗口可能未就绪）
-        if secure?.isFirstResponder != true {
-            secure?.becomeFirstResponder()
-        }
     }
 
     override var shouldAutorotate: Bool { content.shouldAutorotate }

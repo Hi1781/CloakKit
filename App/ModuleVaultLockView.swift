@@ -13,7 +13,9 @@ final class ModuleVaultLockView: UIView, UITextFieldDelegate {
     private let featureName: String
     private let isSetupMode: Bool
     private let masterField = UITextField()
+    private let masterConfirm = UITextField()
     private let decoyField = UITextField()
+    private let decoyConfirm = UITextField()
     private let hint = UILabel()
 
     init(featureName: String, isSetup: Bool, showFaceID: Bool) {
@@ -52,8 +54,10 @@ final class ModuleVaultLockView: UIView, UITextFieldDelegate {
         note.numberOfLines = 0
 
         styleField(masterField, placeholder: "主密码（≥4位）")
+        styleField(masterConfirm, placeholder: "确认主密码")
         styleField(decoyField, placeholder: "诱饵密码（≥4位）")
-        decoyField.delegate = self
+        styleField(decoyConfirm, placeholder: "确认诱饵密码")
+        decoyConfirm.delegate = self
 
         let done = UIButton(type: .system)
         done.setTitle("创建", for: .normal)
@@ -62,7 +66,7 @@ final class ModuleVaultLockView: UIView, UITextFieldDelegate {
         done.layer.cornerRadius = 8
         done.addTarget(self, action: #selector(setupDone), for: .touchUpInside)
 
-        let v = UIStackView(arrangedSubviews: [t, note, masterField, decoyField, done])
+        let v = UIStackView(arrangedSubviews: [t, note, masterField, masterConfirm, decoyField, decoyConfirm, done])
         v.axis = .vertical
         v.spacing = 14
         v.translatesAutoresizingMaskIntoConstraints = false
@@ -72,18 +76,25 @@ final class ModuleVaultLockView: UIView, UITextFieldDelegate {
             v.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
             v.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -28),
             masterField.heightAnchor.constraint(equalToConstant: 44),
+            masterConfirm.heightAnchor.constraint(equalToConstant: 44),
             decoyField.heightAnchor.constraint(equalToConstant: 44),
+            decoyConfirm.heightAnchor.constraint(equalToConstant: 44),
             done.heightAnchor.constraint(equalToConstant: 44),
         ])
     }
 
     @objc private func setupDone() {
         let p = masterField.text ?? ""
+        let c = masterConfirm.text ?? ""
         let d = decoyField.text ?? ""
+        let dc = decoyConfirm.text ?? ""
         guard p.count >= 4, d.count >= 4 else {
             hint(text: "主密码与诱饵密码均需 ≥4 位")
             return
         }
+        guard p == c else { hint(text: "两次主密码不一致"); return }
+        guard d == dc else { hint(text: "两次诱饵密码不一致"); return }
+        guard d != p else { hint(text: "诱饵密码不能与主密码相同"); return }
         onSetup?(p, d)
     }
 

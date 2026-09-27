@@ -4,7 +4,7 @@ import UIKit
 final class SettingsViewController: UITableViewController {
 
     private enum Section: Int, CaseIterable {
-        case security, modules, about
+        case security, about
     }
     private let lm = LockManager.shared
 
@@ -26,14 +26,12 @@ final class SettingsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section) {
         case .security: return "应用安全"
-        case .modules: return "各板块独立密码"
         default: return "关于"
         }
     }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section) {
         case .security: return 5
-        case .modules: return 3
         default: return 3
         }
     }
@@ -71,11 +69,6 @@ final class SettingsViewController: UITableViewController {
                 sw.addTarget(self, action: #selector(lockToggle(_:)), for: .valueChanged)
                 c.accessoryView = sw
             }
-        } else if Section(rawValue: indexPath.section) == .modules {
-            let (name, key) = moduleInfo(indexPath.row)
-            c.textLabel?.text = name + "（独立密码）"
-            c.detailTextLabel?.text = lm.hasModulePassword(key) ? "已设置" : "使用主密码"
-            c.accessoryType = .disclosureIndicator
         } else {
             switch indexPath.row {
             case 0:
@@ -91,14 +84,6 @@ final class SettingsViewController: UITableViewController {
             }
         }
         return c
-    }
-
-    private func moduleInfo(_ row: Int) -> (String, String) {
-        switch row {
-        case 0: return ("浏览器", "browser")
-        case 1: return ("传话", "chat")
-        default: return ("互传", "transfer")
-        }
     }
 
     @objc private func bioToggle(_ s: UISwitch) { lm.useBiometrics = s.isOn }
@@ -118,45 +103,12 @@ final class SettingsViewController: UITableViewController {
             }
             return
         }
-        if Section(rawValue: indexPath.section) == .modules {
-            let (name, key) = moduleInfo(indexPath.row)
-            editModulePassword(key: key, name: name)
-            return
-        }
         switch indexPath.row {
         case 0: changePassword()
         case 1: editSecondary()
         case 2: editDuress()
         default: break
         }
-    }
-
-    // MARK: - 每模块独立密码（含诱饵密码，照搬私密相册）
-    private func editModulePassword(key: String, name: String) {
-        let a = UIAlertController(title: "「\(name)」独立密码",
-                                  message: "设置后打开该板块需输入独立密码；可另设诱饵密码进入空壳；留空清除（回退主密码）。", preferredStyle: .alert)
-        a.addTextField { $0.isSecureTextEntry = true; $0.placeholder = "独立密码（≥4位，留空清除）" }
-        a.addTextField { $0.isSecureTextEntry = true; $0.placeholder = "确认" }
-        a.addTextField { $0.isSecureTextEntry = true; $0.placeholder = "诱饵密码（可选，≥4位）" }
-        a.addAction(UIAlertAction(title: "保存", style: .default) { [weak self] _ in
-            guard let self = self else { return }
-            let p = a.textFields![0].text ?? ""
-            let c = a.textFields![1].text ?? ""
-            let d = a.textFields![2].text ?? ""
-            if p.isEmpty {
-                self.lm.setModulePassword(key, nil); self.lm.setModuleDecoy(key, nil)
-                self.alert("已清除「\(name)」独立密码"); return
-            }
-            guard p.count >= 4 else { self.alert("独立密码至少 4 位"); return }
-            guard p == c else { self.alert("两次不一致"); return }
-            self.lm.setModulePassword(key, p)
-            if d.isEmpty { self.lm.setModuleDecoy(key, nil) }
-            else if d.count >= 4 { self.lm.setModuleDecoy(key, d) }
-            else { self.alert("诱饵密码需 ≥4 位"); return }
-            self.alert("「\(name)」独立密码已设置")
-        })
-        a.addAction(UIAlertAction(title: "取消", style: .cancel))
-        present(a, animated: true)
     }
 
     // MARK: - 修改主密码
@@ -209,6 +161,7 @@ final class SettingsViewController: UITableViewController {
             if p.isEmpty { self.lm.setDuress(nil); self.alert("已清除胁迫密码"); return }
             guard p.count >= 4 else { self.alert("至少 4 位"); return }
             guard p == c else { self.alert("两次不一致"); return }
+            guard !self.lm.verifyMaster(p) else { self.alert("胁迫密码不能与主密码相同"); return }
             self.lm.setDuress(p)
             self.alert("胁迫密码已设置")
         })
