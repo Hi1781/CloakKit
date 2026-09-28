@@ -43,11 +43,12 @@ final class VaultViewController: UIViewController {
     private func showSetup() {
         view.subviews.forEach { $0.removeFromSuperview() }
         let t = UILabel()
-        t.text = "首次使用：设置主密码"
+        t.text = "首次使用：设置私密相册密码"
         t.textColor = .white
         t.font = .systemFont(ofSize: 20, weight: .semibold)
+        t.numberOfLines = 0
         let note = UILabel()
-        note.text = "设置主密码，可另设备用密码（备用密码解锁用途）。"
+        note.text = "设置板块主密码，可另设诱饵密码。输入诱饵密码时进入空壳页面。"
         note.textColor = .systemGray2
         note.font = .systemFont(ofSize: 13)
         note.numberOfLines = 0
@@ -62,6 +63,17 @@ final class VaultViewController: UIViewController {
         passField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 40))
         passField.leftViewMode = .always
 
+        let masterConfirm = UITextField()
+        masterConfirm.placeholder = "确认主密码"
+        masterConfirm.isSecureTextEntry = true
+        masterConfirm.backgroundColor = UIColor.white.withAlphaComponent(0.12)
+        masterConfirm.layer.borderWidth = 0.5
+        masterConfirm.layer.borderColor = GlassTheme.stroke.cgColor
+        masterConfirm.textColor = .white
+        masterConfirm.layer.cornerRadius = 8
+        masterConfirm.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 40))
+        masterConfirm.leftViewMode = .always
+
         let decoy = UITextField()
         decoy.placeholder = "诱饵密码（≥4位）"
         decoy.isSecureTextEntry = true
@@ -73,6 +85,17 @@ final class VaultViewController: UIViewController {
         decoy.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 40))
         decoy.leftViewMode = .always
 
+        let decoyConfirm = UITextField()
+        decoyConfirm.placeholder = "确认诱饵密码"
+        decoyConfirm.isSecureTextEntry = true
+        decoyConfirm.backgroundColor = UIColor.white.withAlphaComponent(0.12)
+        decoyConfirm.layer.borderWidth = 0.5
+        decoyConfirm.layer.borderColor = GlassTheme.stroke.cgColor
+        decoyConfirm.textColor = .white
+        decoyConfirm.layer.cornerRadius = 8
+        decoyConfirm.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 40))
+        decoyConfirm.leftViewMode = .always
+
         let done = UIButton(type: .system)
         done.setTitle("创建", for: .normal)
         done.backgroundColor = .systemBlue
@@ -80,7 +103,12 @@ final class VaultViewController: UIViewController {
         done.layer.cornerRadius = 8
         done.addTarget(self, action: #selector(setupDone(_:)), for: .touchUpInside)
 
-        let v = UIStackView(arrangedSubviews: [t, note, passField, decoy, done])
+        hintLabel.text = " "
+        hintLabel.textColor = .systemRed
+        hintLabel.font = .systemFont(ofSize: 12)
+        hintLabel.numberOfLines = 0
+
+        let v = UIStackView(arrangedSubviews: [t, note, passField, masterConfirm, decoy, decoyConfirm, hintLabel, done])
         v.axis = .vertical
         v.spacing = 14
         v.translatesAutoresizingMaskIntoConstraints = false
@@ -89,18 +117,24 @@ final class VaultViewController: UIViewController {
             v.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             v.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
             v.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
+            passField.heightAnchor.constraint(equalToConstant: 44),
+            masterConfirm.heightAnchor.constraint(equalToConstant: 44),
+            decoy.heightAnchor.constraint(equalToConstant: 44),
+            decoyConfirm.heightAnchor.constraint(equalToConstant: 44),
+            done.heightAnchor.constraint(equalToConstant: 44),
         ])
-        (v.arrangedSubviews[2] as? UITextField)?.widthAnchor.constraint(equalToConstant: 260).isActive = true
-        (v.arrangedSubviews[2] as? UITextField)?.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        (v.arrangedSubviews[3] as? UITextField)?.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        done.heightAnchor.constraint(equalToConstant: 44).isActive = true
     }
 
     @objc private func setupDone(_ sender: UIButton) {
         guard let v = sender.superview as? UIStackView else { return }
         let p = (v.arrangedSubviews[2] as! UITextField).text ?? ""
-        let d = (v.arrangedSubviews[3] as! UITextField).text ?? ""
-        guard p.count >= 4, d.count >= 4 else { return }
+        let c = (v.arrangedSubviews[3] as! UITextField).text ?? ""
+        let d = (v.arrangedSubviews[4] as! UITextField).text ?? ""
+        let dc = (v.arrangedSubviews[5] as! UITextField).text ?? ""
+        guard p.count >= 4, d.count >= 4 else { hintLabel.text = "主密码与诱饵密码均需 ≥4 位"; return }
+        guard p == c else { hintLabel.text = "两次主密码不一致"; return }
+        guard d == dc else { hintLabel.text = "两次诱饵密码不一致"; return }
+        guard d != p else { hintLabel.text = "诱饵密码不能与主密码相同"; return }
 
         func persist(_ pwd: String) -> (Data, String) {
             let salt = VaultCrypto.random(VaultCrypto.saltSize)
