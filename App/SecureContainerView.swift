@@ -1,58 +1,57 @@
 import UIKit
 
-/// 安全渲染层：全屏「激活态」isSecureTextEntry 输入框（底层黑幕）
+/// 防截屏容器：UITextLayoutCanvasView 私有画布方案（不激活键盘）
 ///
-/// 机制（照传纸条的推断结构，与你分析一致）：
-///   - 底层放一个覆盖全屏、isSecureTextEntry = true 的输入框，**保持激活（第一响应者）**，
-///     文本为覆盖全屏的黑色安全字形 → 系统在截图/录屏缓冲区把这段 secure 内容整体黑化，
-///     从而「截图时整个屏幕变成黑色」。
-///   - 顶层用不透明深色背景的真实界面完全盖住它 → 正常显示看不见黑幕、不拦触摸、不弹键盘。
-///   - inputView / inputAccessoryView 置空 → 激活时不弹系统键盘；唯一副作用是 iOS 的
-///     「密码自动填充」输入提示条（传纸条截图底部那条浅灰细线正是它）。
-///   - 真实输入框获得焦点时 secure 自动失焦（正在输入时截图不黑），失焦后 wrapper 重新激活它。
+/// 机制（传纸条推断结构）：
+///   - 创建一个 isSecureTextEntry = true 的 UITextField；
+///   - 把它内部的私有内容画布 UITextLayoutCanvasView 找出来，把整块敏感 UI 挂进该画布；
+///   - 系统安全管线在 截图 / 录屏 / App 切换缩略图 时清空该画布内容 → 变成黑色；
+///   - 肉眼正常渲染、完全不激活键盘（canBecomeFirstResponder = false）。
+///   若当前 iOS 找不到该私有画布，回退为直接把内容挂字段自身（UI 保持正常、不激活）。
 final class SecureContainerView: UITextField {
+
+    private weak var canvas: UIView?
 
     init() {
         super.init(frame: .zero)
         isSecureTextEntry = true
         borderStyle = .none
-        backgroundColor = .black
-        textColor = .black
-        // 覆盖全屏的黑色安全字形，让系统在捕获时把整屏黑化
-        text = String(repeating: "●", count: 900)
-        textAlignment = .center
-        font = .systemFont(ofSize: 44, weight: .bold)
-        // 隐藏系统键盘（保持激活但不弹键盘）
-        inputView = UIView()
-        inputAccessoryView = UIView()
+        backgroundColor = .clear
+        text = ""
         translatesAutoresizingMaskIntoConstraints = false
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    /// 必须能成为第一响应者（激活 → 系统保留 secure 渲染 → 截屏黑化）
-    override var canBecomeFirstResponder: Bool { true }
+    /// 不激活键盘、不抢焦点、不弹输入提示条
+    override var canBecomeFirstResponder: Bool { false }
 
-    /// 完全穿透：不拦截任何触摸，事件落到顶层内容
+    /// 完全穿透：不拦截任何触摸
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         return nil
     }
 
-    /// 保持激活；若刚被真实输入框抢走焦点，失焦后由 wrapper 重新激活
-    func activate() {
-        DispatchQueue.main.async { [weak self] in
-            if !(self?.isFirstResponder ?? false) {
-                _ = self?.becomeFirstResponder()
-            }
+    /// 内容宿主：优先返回私有画布；取不到则回退字段自身
+    func contentHost() -> UIView {
+        if let c = canvas { return c }
+        if let c = Self.locateCanvas(in: self) { canvas = c; return c }
+        return self
+    }
+
+    private static func locateCanvas(in v: UIView) -> UIView? {
+        if type(of: v).description() == "UITextLayoutCanvasView" { return v }
+        for s in v.subviews {
+            if let c = locateCanvas(in: s) { return c }
         }
+        return nil
     }
 }
 
-/// 把任意根控制器（TabBar / 解锁页）的内容放进安全容器
+/// 把任意根控制器（TabBar / 解锁页）的内容放进安全容器（私有画布）
 final class SecureWrapperViewController: UIViewController {
     private let content: UIViewController
     private let secure: SecureContainerView
     private var fgObserver: NSObjectProtocol?
-    private var resignObserver: NSObjectProtocol?
+    private var hosted = false
 
     init(content: UIViewController) {
         self.content = content
@@ -63,7 +62,6 @@ final class SecureWrapperViewController: UIViewController {
 
     deinit {
         if let fgObserver { NotificationCenter.default.removeObserver(fgObserver) }
-        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
     }
 
     override func viewDidLoad() {
@@ -71,40 +69,43 @@ final class SecureWrapperViewController: UIViewController {
         let bg = UIColor(white: 0.06, alpha: 1)
         view.backgroundColor = bg
 
-        // 底层：激活态 secure 黑幕（截图时整屏黑化）
+        // 底层：secure 字段（其私有画布承载内容）
         secure.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(secure)
-
-        // 顶层：真实内容，不透明深色背景 → 正常显示时黑幕被完全盖住，看不到、不影响交互。
-        addChild(content)
-        content.view.translatesAutoresizingMaskIntoConstraints = false
-        content.view.backgroundColor = bg
-        view.addSubview(content.view)
         NSLayoutConstraint.activate([
             secure.topAnchor.constraint(equalTo: view.topAnchor),
             secure.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             secure.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             secure.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-
-            content.view.topAnchor.constraint(equalTo: view.topAnchor),
-            content.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            content.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
+
+        addChild(content)
+        content.view.backgroundColor = bg
         content.didMove(toParent: self)
 
-        // 前台 / 输入框失焦后，重新激活 secure 黑幕
+        // 回前台后，把内容重新挂进（画布可能重建）
         fgObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.secure.activate() }
-        resignObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.keyboardWillHideNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.secure.activate() }
+        ) { [weak self] _ in
+            self?.hostContent()
+        }
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        secure.activate()
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        hostContent()
+    }
+
+    /// 把内容挂进 secure 字段的私有画布（hosted 保证只挂一次）
+    private func hostContent() {
+        guard !hosted else { return }
+        hosted = true
+        let host = secure.contentHost()
+        let cv = content.view!
+        cv.translatesAutoresizingMaskIntoConstraints = false
+        cv.frame = host.bounds
+        cv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.addSubview(cv)
     }
 
     override var shouldAutorotate: Bool { content.shouldAutorotate }
