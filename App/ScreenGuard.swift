@@ -10,7 +10,7 @@ final class ScreenGuard {
 
     // MARK: - 聊天页可见度（仅聊天页截图才上报对端）
     private static var chatDepth = 0
-    private static(set) var isChatScreen = false
+    private(set) static var isChatScreen = false
     static func chatAppeared() { chatDepth += 1; isChatScreen = true }
     static func chatDisappeared() { chatDepth = max(0, chatDepth - 1); isChatScreen = chatDepth > 0 }
 
