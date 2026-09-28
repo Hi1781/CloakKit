@@ -8,6 +8,12 @@ final class ScreenGuard {
     private static var toast: UILabel?
     private static var observers: [NSObjectProtocol] = []
 
+    // MARK: - 聊天页可见度（仅聊天页截图才上报对端）
+    private static var chatDepth = 0
+    private static(set) var isChatScreen = false
+    static func chatAppeared() { chatDepth += 1; isChatScreen = true }
+    static func chatDisappeared() { chatDepth = max(0, chatDepth - 1); isChatScreen = chatDepth > 0 }
+
     static func install(on w: UIWindow) {
         guard let ws = w.windowScene else { return }
 
@@ -35,12 +41,17 @@ final class ScreenGuard {
         }
         observers.append(togObs)
 
-        // 3) 截屏提示（截图完成后触发，无法阻止，仅告警 + 上报对端）
+        // 3) 截屏提示（截图完成后触发，无法阻止截图生成）
+        //    仅聊天页截图才上报对端；其他页面仅本地提示。
         let shotObs = NotificationCenter.default.addObserver(
             forName: UIApplication.userDidTakeScreenshotNotification, object: nil, queue: .main
         ) { _ in
-            ChatStore.shared.addThreatAlert("对方设备已截屏，已自动上报安全告警")
-            showToast("已检测到截屏 · 已上报对方")
+            if ScreenGuard.isChatScreen {
+                ChatStore.shared.addThreatAlert("对方设备已截屏，已自动上报安全告警")
+                showToast("已检测到截屏 · 已上报对方")
+            } else {
+                showToast("已检测到截屏")
+            }
         }
         observers.append(shotObs)
 

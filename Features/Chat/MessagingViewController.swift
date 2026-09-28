@@ -37,6 +37,15 @@ final class MessagingViewController: UIViewController, UITableViewDataSource, UI
         table.reloadData()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        ScreenGuard.chatAppeared()
+    }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        ScreenGuard.chatDisappeared()
+    }
+
     // MARK: - 我的 Peer ID
     @objc private func showMyCard() {
         let id = store.myPeerID, invite = store.myInvite

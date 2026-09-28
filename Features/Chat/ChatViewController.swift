@@ -54,6 +54,15 @@ final class ChatViewController: UIViewController, UITableViewDataSource, UITable
         scheduleBurns()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        ScreenGuard.chatAppeared()
+    }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        ScreenGuard.chatDisappeared()
+    }
+
     /// 阅后即焚：对方发来的焚消息被“读”（展示）后，N 秒后本地销毁（含持久化）
     private func scheduleBurns() {
         let current = msgs
